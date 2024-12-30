@@ -1,37 +1,26 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
-const UserSchema = new mongoose.Schema({
-    name: {
-        type: String,
-        trim: true
-    },
-    email: {
-        type: String,
-        unique: true,
-        sparse: true, // Allows multiple null values
-        lowercase: true,
-        trim: true
-    },
-    phoneNumber: {
-        type: String,
-        unique: true,
-        sparse: true
-    },
-    googleId: {
-        type: String,
-        unique: true,
-        sparse: true
-    },
-    isGoogleUser: {
-        type: Boolean,
-        default: false
-    },
-    otp: String,
-    otpExpiresAt: Date,
-    createdAt: {
-        type: Date,
-        default: Date.now
-    }
+const userSchema = new mongoose.Schema({
+  fullName: String,
+  phoneNumber: { type: String, required: true, unique: true },
+  email: { type: String, required: true },
+  otp: String,
+  otpExpiresAt: Date,
+  pin: String, // Add this field to store the PIN
+  panNumber: String, // Add this field to store the PAN number
+  panUpdatedAt: String,
+  occupation: String,
+  dob: String,
+  pincode: String,
+  address: String,
+  city: String,
+  state: String,
+  district: String,
+  income: String,
+  isGoogleUser: { type: Boolean, default: false },
+  googleId: String,
 });
 
-module.exports = mongoose.model('User', UserSchema);
+const User = mongoose.model("User", userSchema);
+
+module.exports = User;

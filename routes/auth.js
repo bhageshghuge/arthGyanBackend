@@ -4,6 +4,7 @@ const router = express.Router();
 const { OAuth2Client } = require("google-auth-library");
 const axios = require("axios");
 const nodeCache = require("node-cache");
+require("dotenv").config();
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const cache = new nodeCache();
@@ -60,22 +61,108 @@ router.get("/pincode/:pincode", async (req, res) => {
   }
 });
 
+router.put("/user/:phoneNumber", async (req, res) => {
+  const { phoneNumber } = req.params;
+  const {
+    fullName,
+    email,
+    panNumber,
+    occupation,
+    income,
+    address,
+    dob,
+    pincode,
+    city,
+    district,
+    state,
+  } = req.body;
+
+  try {
+    // Find the user by phone number
+    const user = await User.findOne({ phoneNumber });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Update user fields
+    user.fullName = fullName || user.fullName;
+    user.email = email || user.email;
+    user.panNumber = panNumber || user.panNumber;
+    user.occupation = occupation || user.occupation;
+    user.income = income || user.income;
+    user.address = address || user.address;
+    user.dob = dob || user.dob;
+    user.pincode = pincode || user.pincode;
+    user.city = city || user.city;
+    user.district = district || user.district;
+    user.state = state || user.state;
+
+    // Save the updated user to the database
+    await user.save();
+
+    res.status(200).json({
+      message: "User information updated successfully",
+      user,
+    });
+  } catch (error) {
+    console.error("Error updating user data:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/register", async (req, res) => {
+  const { fullName, phoneNumber, email } = req.body;
+
+  if (!fullName || !phoneNumber || !email) {
+    return res.status(400).json({ error: "All fields are required" });
+  }
+
+  try {
+    let user = await User.findOne({ phoneNumber });
+
+    if (!user) {
+      user = new User({ fullName, phoneNumber, email });
+      await user.save();
+    }
+
+    // Generate OTP
+    const otp = 1933;
+    user.otp = otp;
+    user.otpExpiresAt = Date.now() + 5 * 60 * 1000; // Expires in 5 minutes
+    await user.save();
+
+    console.log("Generated OTP:", user.fullName); // Replace with SMS sending logic
+
+    res.status(200).json({ message: "OTP sent", username: user.fullName });
+  } catch (error) {
+    console.error("Error registering user:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Generate OTP
 router.post("/send-otp", async (req, res) => {
   const { phoneNumber, name, email } = req.body;
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+  // Check if the phone number exists in the database
+  const user = await User.findOne({ phoneNumber });
+
+  if (!user) {
+    // If the user doesn't exist
+    return res.status(404).json({ error: "User not registered" });
+  }
+
+  const otp = 1933;
 
   try {
-    const user = await User.findOneAndUpdate(
+    // Update OTP for the user if the phone number exists
+    await User.findOneAndUpdate(
       { phoneNumber },
       {
-        phoneNumber,
-        name,
-        email,
         otp,
-        otpExpiresAt: Date.now() + 5 * 60 * 1000,
-      },
-      { upsert: true, new: true }
+        otpExpiresAt: Date.now() + 5 * 60 * 1000, // OTP expires after 5 minutes
+      }
     );
 
     console.log("OTP generated:", otp); // For debugging
@@ -83,6 +170,145 @@ router.post("/send-otp", async (req, res) => {
   } catch (err) {
     console.error("Error sending OTP:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/update-pin", async (req, res) => {
+  const { phoneNumber, pin } = req.body;
+
+  if (!pin || pin.length !== 4) {
+    return res.status(400).json({ error: "PIN must be 4 digits" });
+  }
+
+  try {
+    let user = await User.findOne({ phoneNumber });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    user.pin = pin; // Update the PIN
+    await user.save();
+
+    res.json({
+      message: "PIN updated successfully",
+      user: {
+        phoneNumber,
+        name: user.name,
+        email: user.email,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating PIN:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Verify PIN
+router.post("/verify-pin", async (req, res) => {
+  const { phoneNumber, pin } = req.body;
+
+  if (!pin || pin.length !== 4) {
+    return res.status(400).json({ error: "PIN must be 4 digits" });
+  }
+
+  try {
+    const user = await User.findOne({ phoneNumber });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (!user.pin || user.pin !== pin) {
+      return res.status(400).json({ error: "Invalid PIN" });
+    }
+
+    // PIN is correct
+    // You can now perform additional actions, such as logging the user in or generating a token
+    // For example, generate a token (you should implement proper JWT token generation)
+    const token = "dummy-token-" + Date.now(); // Replace with proper JWT token
+
+    res.status(200).json({ message: "PIN verified successfully" });
+  } catch (err) {
+    console.error("Error verifying PIN:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Route to update PAN number
+router.post("/update-pan", async (req, res) => {
+  const { phoneNumber, panNumber } = req.body;
+
+  if (!panNumber || panNumber.length !== 10) {
+    return res.status(400).json({ error: "PAN number must be 10 characters" });
+  }
+
+  try {
+    let user = await User.findOne({ phoneNumber });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    user.panNumber = panNumber; // Update the PAN number
+    user.panUpdatedAt = new Date().toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+    });
+    await user.save();
+
+    res.status(200).json({ message: "PAN number updated successfully" });
+  } catch (error) {
+    console.error("Error updating PAN:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+// Route to update occupation
+router.post("/update-occupation", async (req, res) => {
+  const { phoneNumber, occupation } = req.body;
+
+  if (!occupation) {
+    return res.status(400).json({ error: "Occupation is required" });
+  }
+
+  try {
+    let user = await User.findOne({ phoneNumber });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    user.occupation = occupation; // Update the occupation
+    await user.save();
+
+    res.status(200).json({ message: "Occupation updated successfully" });
+  } catch (error) {
+    console.error("Error updating occupation:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Route to update income
+router.post("/update-income", async (req, res) => {
+  const { phoneNumber, income } = req.body;
+
+  if (!income) {
+    return res.status(400).json({ error: "Income is required" });
+  }
+
+  try {
+    let user = await User.findOne({ phoneNumber });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    user.income = income; // Update the income
+    await user.save();
+
+    res.status(200).json({ message: "Income updated successfully" });
+  } catch (error) {
+    console.error("Error updating income:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -97,23 +323,53 @@ router.post("/check-user", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+// Fetch user data by phone number
+router.get("/user/:phoneNumber", async (req, res) => {
+  const { phoneNumber } = req.params;
+
+  try {
+    // Find the user by phone number
+    const user = await User.findOne({ phoneNumber });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Return the user data
+    res.status(200).json({
+      message: "User data fetched successfully",
+      user: {
+        fullName: user.fullName,
+        phoneNumber: user.phoneNumber,
+        email: user.email,
+        occupation: user.occupation,
+        income: user.income,
+        panNumber: user.panNumber,
+        dob: user.dob,
+        address: user.address,
+        pincode: user.pincode,
+        district: user.district,
+        city: user.city,
+        state: user.state,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching user data:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 // Verify OTP
 router.post("/verify-otp", async (req, res) => {
-  const { phoneNumber, otp, name, email } = req.body;
+  const { phoneNumber, otp } = req.body;
 
   try {
-    console.log("Verifying OTP:", { phoneNumber, otp }); // For debugging
-
     const user = await User.findOne({ phoneNumber });
 
     if (!user) {
       console.log("User not found");
       return res.status(400).json({ error: "User not found" });
     }
-
-    console.log("Stored OTP:", user.otp); // For debugging
-    console.log("OTP Expires At:", user.otpExpiresAt); // For debugging
 
     if (!user.otp || user.otp !== otp) {
       return res.status(400).json({ error: "Invalid OTP" });
@@ -123,12 +379,10 @@ router.post("/verify-otp", async (req, res) => {
       return res.status(400).json({ error: "OTP has expired" });
     }
 
-    // Update user details
-    if (name) user.name = name;
-    if (email) user.email = email;
-
     user.otp = null;
     user.otpExpiresAt = null;
+    const hasPin = user.pin ? true : false;
+
     await user.save();
 
     // Generate a token (you should implement proper JWT token generation)
@@ -137,7 +391,7 @@ router.post("/verify-otp", async (req, res) => {
 
     res.json({
       message: "OTP verified successfully",
-      token,
+      hasPin,
       user: {
         phoneNumber,
         name: user.name,
