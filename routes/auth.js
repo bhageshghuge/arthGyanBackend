@@ -119,12 +119,20 @@ router.post("/register", async (req, res) => {
   }
 
   try {
-    let user = await User.findOne({ phoneNumber });
+    // Check if a user already exists with the same phone number or email
+    let user = await User.findOne({ $or: [{ phoneNumber }, { email }] });
 
-    if (!user) {
-      user = new User({ fullName, phoneNumber, email });
-      await user.save();
+    if (user) {
+      return res.status(400).json({
+        error: `User already registered with ${
+          user.phoneNumber === phoneNumber ? "this phone number" : "this email"
+        }`,
+      });
     }
+
+    // Create a new user
+    user = new User({ fullName, phoneNumber, email });
+    await user.save();
 
     // Generate OTP
     const otp = 1933;
@@ -132,7 +140,7 @@ router.post("/register", async (req, res) => {
     user.otpExpiresAt = Date.now() + 5 * 60 * 1000; // Expires in 5 minutes
     await user.save();
 
-    console.log("Generated OTP:", user.fullName); // Replace with SMS sending logic
+    console.log("Generated OTP for:", user.fullName); // Replace with SMS sending logic
 
     res.status(200).json({ message: "OTP sent", username: user.fullName });
   } catch (error) {
