@@ -3,8 +3,14 @@ const User = require("../models/User");
 const router = express.Router();
 const { OAuth2Client } = require("google-auth-library");
 const axios = require("axios");
+const multer = require("multer");
+const FormData = require("form-data");
+const fs = require("fs"); // Add this for handling streams
 const nodeCache = require("node-cache");
 require("dotenv").config();
+// Configure multer to handle file uploads in memory
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const cache = new nodeCache();
@@ -112,9 +118,9 @@ router.put("/user/:phoneNumber", async (req, res) => {
 });
 
 router.post("/register", async (req, res) => {
-  const { fullName, phoneNumber, email } = req.body;
+  const { name, phoneNumber, email } = req.body;
 
-  if (!fullName || !phoneNumber || !email) {
+  if (!name || !phoneNumber || !email) {
     return res.status(400).json({ error: "All fields are required" });
   }
 
@@ -131,18 +137,18 @@ router.post("/register", async (req, res) => {
     }
 
     // Create a new user
-    user = new User({ fullName, phoneNumber, email });
+    user = new User({ name, phoneNumber, email });
     await user.save();
 
-    // Generate OTP
-    const otp = 1933;
-    user.otp = otp;
-    user.otpExpiresAt = Date.now() + 5 * 60 * 1000; // Expires in 5 minutes
-    await user.save();
+    // // Generate OTP
+    // const otp = 1933;
+    // user.otp = otp;
+    // user.otpExpiresAt = Date.now() + 5 * 60 * 1000; // Expires in 5 minutes
+    // await user.save();
 
-    console.log("Generated OTP for:", user.fullName); // Replace with SMS sending logic
+    // console.log("Generated OTP for:", user.fullName); // Replace with SMS sending logic
 
-    res.status(200).json({ message: "OTP sent", username: user.fullName });
+    res.status(200).json({ message: "User Registration Successfull" });
   } catch (error) {
     console.error("Error registering user:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -182,28 +188,38 @@ router.post("/send-otp", async (req, res) => {
 });
 
 router.post("/update-pin", async (req, res) => {
-  const { phoneNumber, pin } = req.body;
+  const { identifier, pin } = req.body; // Use identifier (either phoneNumber or email)
 
+  // Ensure PIN is provided and is exactly 4 digits
   if (!pin || pin.length !== 4) {
     return res.status(400).json({ error: "PIN must be 4 digits" });
   }
 
   try {
-    let user = await User.findOne({ phoneNumber });
+    let user;
+    if (identifier.includes("@")) {
+      // Assuming email contains '@'
+      user = await User.findOne({ email: identifier });
+    } else {
+      user = await User.findOne({ phoneNumber: identifier });
+    }
 
+    // If user is not found
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    user.pin = pin; // Update the PIN
+    // Update the PIN
+    user.pin = pin;
     await user.save();
 
+    // Return the updated user info
     res.json({
       message: "PIN updated successfully",
       user: {
-        phoneNumber,
-        name: user.name,
+        phoneNumber: user.phoneNumber,
         email: user.email,
+        name: user.name,
       },
     });
   } catch (error) {
@@ -212,16 +228,23 @@ router.post("/update-pin", async (req, res) => {
   }
 });
 
-// Verify PIN
 router.post("/verify-pin", async (req, res) => {
-  const { phoneNumber, pin } = req.body;
+  const { identifier, pin } = req.body; // Use identifier (either phoneNumber or email)
+  console.log(identifier, pin);
 
   if (!pin || pin.length !== 4) {
     return res.status(400).json({ error: "PIN must be 4 digits" });
   }
 
   try {
-    const user = await User.findOne({ phoneNumber });
+    // Check if the identifier is phone number or email and find user accordingly
+    let user;
+    if (identifier.includes("@")) {
+      // Assuming email contains '@'
+      user = await User.findOne({ email: identifier });
+    } else {
+      user = await User.findOne({ phoneNumber: identifier });
+    }
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
@@ -233,8 +256,7 @@ router.post("/verify-pin", async (req, res) => {
 
     // PIN is correct
     // You can now perform additional actions, such as logging the user in or generating a token
-    // For example, generate a token (you should implement proper JWT token generation)
-    const token = "dummy-token-" + Date.now(); // Replace with proper JWT token
+    // const token = "dummy-token-" + Date.now(); // Replace with proper JWT token
 
     res.status(200).json({ message: "PIN verified successfully" });
   } catch (err) {
@@ -325,19 +347,35 @@ router.post("/check-user", async (req, res) => {
   try {
     const { phoneNumber } = req.body;
     const user = await User.findOne({ phoneNumber });
-    res.json({ exists: !!user });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" }); // Send an error if the user does not exist
+    }
+
+    res.json({
+      message: "User Exists",
+      user: {
+        phoneNumber,
+        name: user.name,
+        email: user.email,
+      },
+    });
   } catch (error) {
     console.error("Error checking user:", error);
     res.status(500).json({ error: "Server error" });
   }
 });
+
 // Fetch user data by phone number
-router.get("/user/:phoneNumber", async (req, res) => {
-  const { phoneNumber } = req.params;
+// Fetch user data by phoneNumber (GET)
+router.get("/user/:identifier", async (req, res) => {
+  const { identifier } = req.params; // This can be either phoneNumber or email
 
   try {
-    // Find the user by phone number
-    const user = await User.findOne({ phoneNumber });
+    // Check if identifier is a phone number or email
+    const user = await User.findOne({
+      $or: [{ phoneNumber: identifier }, { email: identifier }],
+    });
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
@@ -346,23 +384,89 @@ router.get("/user/:phoneNumber", async (req, res) => {
     // Return the user data
     res.status(200).json({
       message: "User data fetched successfully",
-      user: {
-        fullName: user.fullName,
-        phoneNumber: user.phoneNumber,
-        email: user.email,
-        occupation: user.occupation,
-        income: user.income,
-        panNumber: user.panNumber,
-        dob: user.dob,
-        address: user.address,
-        pincode: user.pincode,
-        district: user.district,
-        city: user.city,
-        state: user.state,
-      },
+      user,
     });
   } catch (error) {
     console.error("Error fetching user data:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Update user data by phoneNumber (PUT)
+router.post("/user/updateUser", async (req, res) => {
+  const { email, updatedUser } = req.body;
+
+  if (!email || !updatedUser) {
+    console.error("Invalid request: Missing email or updatedUser");
+    return res
+      .status(400)
+      .json({ error: "email and updatedUser are required" });
+  }
+
+  try {
+    const user = await User.findOneAndUpdate(
+      { email },
+      { $set: updatedUser },
+      { new: true, runValidators: true }
+    );
+
+    if (!user) {
+      console.error("No user found with email:", email);
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Prepare the data to send to the external API
+    const jsonRequest = {
+      type: user.type,
+      tax_status: user.tax_status,
+      name: user.name, // Adjust as necessary based on the updatedUser data
+      date_of_birth: user.date_of_birth, // Adjust based on the data
+      gender: user.gender, // Adjust based on the data
+      occupation: user.occupation, // Adjust based on the data
+      pan: user.pan, // Adjust based on the data
+      country_of_birth: user.country_of_birth, // Adjust based on the data
+      place_of_birth: user.place_of_birth, // Adjust based on the data
+      use_default_tax_residences: user.use_default_tax_residences,
+      first_tax_residency: {
+        country: user.first_tax_residency.country, // Adjust based on the data
+        taxid_type: user.first_tax_residency.taxid_type,
+        taxid_number: user.first_tax_residency.taxid_number, // Adjust based on the data
+      },
+      source_of_wealth: user.source_of_wealth, // Adjust based on the data
+      income_slab: user.income_slab, // Adjust based on the data
+      pep_details: user.pep_details, // Adjust based on the data
+    };
+
+    // Log jsonRequest to console before sending it to the external API
+    console.log(jsonRequest);
+
+    // Send data to the external API
+    const accessToken = await getAccessToken();
+    const response = await axios.post(
+      "https://s.finprim.com/v2/investor_profiles",
+      jsonRequest,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`, // Replace with actual access token
+        },
+      }
+    );
+    const externalApiId = response.data.id;
+
+    // Store the id in your database (e.g., updating the user)
+    user.investorId = externalApiId; // Assuming you have a field `externalApiId` in your User model
+    await user.save();
+
+    res.status(200).json({
+      message: "User data updated and sent to external API successfully",
+      user,
+      externalApiResponse: response.data,
+    });
+  } catch (error) {
+    console.error(
+      "Error updating user data or sending data to external API:",
+      error
+    );
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -418,8 +522,10 @@ router.post("/google-signin", async (req, res) => {
 
   try {
     let user = await User.findOne({ email });
+    // console.log("user found ", user);
 
     if (!user) {
+      // New user
       user = new User({
         email,
         name,
@@ -427,22 +533,132 @@ router.post("/google-signin", async (req, res) => {
         isGoogleUser: true,
       });
       await user.save();
+      return res.json({
+        message: "Google Sign-In successful",
+        user: {
+          email: user.email,
+          name: user.name,
+        },
+        isNewUser: true, // Flag indicating this is a new user
+      });
     }
 
-    // Generate a token (you should implement proper JWT token generation)
-    const token = "dummy-token-" + Date.now(); // Replace with proper JWT token
-
+    // Existing user
     res.json({
       message: "Google Sign-In successful",
-      token,
       user: {
-        email,
+        email: user.email,
         name: user.name,
       },
+      isNewUser: false, // Flag indicating this is an existing user
     });
   } catch (err) {
     console.error("Error in Google sign-in:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Route to upload a file and get the ID from the external API
+router.post("/upload-file", upload.single("file"), async (req, res) => {
+  console.log("Received file:", req.file); // This should log the file information
+
+  try {
+    // Ensure a file is uploaded
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    // Prepare the form data
+    const formData = new FormData();
+
+    // Check if the file is uploaded in memory (buffer) or on disk (path)
+    if (req.file.buffer) {
+      // For in-memory storage (buffer), append the buffer directly
+      formData.append("file", req.file.buffer, {
+        filename: req.file.originalname,
+        contentType: req.file.mimetype,
+      });
+    } else if (req.file.path) {
+      // For disk storage (file path), create a stream
+      const fileStream = fs.createReadStream(req.file.path);
+      formData.append("file", fileStream, {
+        filename: req.file.originalname,
+        contentType: req.file.mimetype,
+      });
+    } else {
+      // If no valid file information is available
+      return res.status(400).json({ error: "No file buffer or path found" });
+    }
+
+    // Add optional purpose if provided in the request body
+    if (req.body.purpose) {
+      formData.append("purpose", req.body.purpose);
+    }
+
+    // Make the request to the external API
+    const accessToken = await getAccessToken();
+    const response = await axios.post("https://s.finprim.com/files", formData, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`, // Replace with actual access token
+        ...formData.getHeaders(), // Form-data headers for multipart/form-data
+      },
+    });
+
+    // Respond with the API response
+    res.status(200).json({
+      message: "File uploaded successfully",
+      data: response.data,
+    });
+  } catch (error) {
+    console.error("Error uploading file:", error);
+    res
+      .status(500)
+      .json({ error: "Error uploading file", details: error.message });
+  }
+});
+
+// Route to create a new KYC request
+router.post("/kyc-request", async (req, res) => {
+  console.log("Received body:", req.body);
+
+  const { jsonRequest } = req.body;
+
+  if (!jsonRequest) {
+    return res.status(400).json({ error: "jsonRequest is required" });
+  }
+
+  try {
+    const accessToken = await getAccessToken();
+
+    const headers = {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    };
+
+    console.log("Sending request to external API:", jsonRequest);
+
+    // Send the KYC request to the external API
+    const response = await axios.post(
+      "https://s.finprim.com/v2/kyc_requests",
+      JSON.stringify(jsonRequest),
+      { headers }
+    );
+
+    console.log("External API response:", response.data);
+
+    res.status(200).json({
+      message: "KYC request created successfully",
+      data: response.data,
+    });
+  } catch (error) {
+    console.error(
+      "Error creating KYC request:",
+      error.response ? error.response.data : error.message
+    );
+    res.status(500).json({
+      error: "Error creating KYC request",
+      details: error.response ? error.response.data : error.message,
+    });
   }
 });
 
