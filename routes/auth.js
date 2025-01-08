@@ -617,11 +617,10 @@ router.post("/upload-file", upload.single("file"), async (req, res) => {
   }
 });
 
-// Route to create a new KYC request
 router.post("/kyc-request", async (req, res) => {
   console.log("Received body:", req.body);
 
-  const { jsonRequest } = req.body;
+  const { email, jsonRequest } = req.body; // Removed id from the request body
 
   if (!jsonRequest) {
     return res.status(400).json({ error: "jsonRequest is required" });
@@ -635,30 +634,163 @@ router.post("/kyc-request", async (req, res) => {
       "Content-Type": "application/json",
     };
 
-    console.log("Sending request to external API:", jsonRequest);
+    // Check if the user exists by email
+    const user = await User.findOne({ email: email }); // Adjust based on how you identify users
 
-    // Send the KYC request to the external API
-    const response = await axios.post(
-      "https://s.finprim.com/v2/kyc_requests",
-      JSON.stringify(jsonRequest),
-      { headers }
-    );
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
 
-    console.log("External API response:", response.data);
+    // Check if the user already has an existing KYC request
+    if (user.kycId) {
+      console.log(`Checking existing KYC request with ID ${user.kycId}`);
 
-    res.status(200).json({
-      message: "KYC request created successfully",
-      data: response.data,
-    });
+      const kycResponse = await axios.get(
+        `https://s.finprim.com/v2/kyc_requests/${user.kycId}`,
+        { headers }
+      );
+
+      const kycExpiresAt = new Date(kycResponse.data.expires_at);
+      const currentTime = new Date();
+
+      if (kycExpiresAt > currentTime) {
+        // KYC request is still valid, so update it
+        console.log(
+          `KYC request with ID ${user.kycId} is still valid. Updating it.`
+        );
+        const response = await axios.post(
+          `https://s.finprim.com/v2/kyc_requests/${user.kycId}`,
+          JSON.stringify(jsonRequest),
+          { headers }
+        );
+        console.log("Updated KYC request:", response.data);
+        res.status(200).json({
+          message: "KYC request updated successfully",
+          data: response.data,
+        });
+        return;
+      } else {
+        // KYC request is expired, so create a new one
+        console.log("KYC request has expired. Creating a new KYC request.");
+        const response = await axios.post(
+          "https://s.finprim.com/v2/kyc_requests",
+          JSON.stringify(jsonRequest),
+          { headers }
+        );
+        console.log("New KYC request created:", response.data);
+        user.kycId = response.data.id;
+        await user.save(); // Save the new KYC request ID
+
+        res.status(200).json({
+          message: "KYC request created successfully",
+          data: response.data,
+        });
+        return;
+      }
+    } else {
+      // No existing KYC ID, so create a new request
+      console.log("No existing KYC request. Creating a new one.");
+      const response = await axios.post(
+        "https://s.finprim.com/v2/kyc_requests",
+        JSON.stringify(jsonRequest),
+        { headers }
+      );
+      console.log("New KYC request created:", response.data);
+      user.kycId = response.data.id;
+      await user.save(); // Save the new KYC request ID
+
+      res.status(200).json({
+        message: "KYC request created successfully",
+        data: response.data,
+      });
+    }
   } catch (error) {
     console.error(
-      "Error creating KYC request:",
+      "Error handling KYC requestsss:",
       error.response ? error.response.data : error.message
     );
     res.status(500).json({
-      error: "Error creating KYC request",
+      error: "Error handling KYC request",
       details: error.response ? error.response.data : error.message,
     });
+  }
+});
+
+router.post("/generate-identity-document", async (req, res) => {
+  const { email, postbackUrl } = req.body;
+
+  try {
+    // Find the user by email
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Retrieve the KYC request ID from the database or any other source
+    const kycRequestId = user.kycId; // Assuming you have the kycRequestId stored in the user document
+
+    if (!kycRequestId) {
+      return res.status(400).json({ error: "KYC request ID not found" });
+    }
+
+    // Prepare the data to send to the external API
+    const jsonRequest = {
+      kyc_request: kycRequestId,
+      type: "aadhaar",
+      postback_url: postbackUrl,
+    };
+
+    // Log the request body for debugging
+    console.log(jsonRequest);
+
+    // Fetch the access token to authenticate the request to the external API
+    const accessToken = await getAccessToken();
+
+    // Send the data to the external API to create the identity document
+    const response = await axios.post(
+      "https://s.finprim.com/v2/identity_documents",
+      JSON.stringify(jsonRequest),
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`, // Replace with actual access token
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    // Handle the response from the external API
+    const identityDocument = response.data;
+
+    // You can save this identity document ID in your database if necessary
+    user.identityDocumentId = identityDocument.id; // Save the returned identity document ID
+    await user.save();
+
+    res.status(200).json({
+      message: "Identity document generated successfully",
+      identityDocument,
+    });
+  } catch (error) {
+    console.error("Error generating identity document:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.all("/callback", (req, res) => {
+  // Use router.all to handle both GET and POST
+  const { identity_document, status } = req.query; // Use req.query for GET params
+
+  if (identity_document && status) {
+    console.log(`Identity Document: ${identity_document}`);
+    console.log(`Status: ${status}`);
+
+    // Perform any necessary actions with the data (e.g., store, process)
+
+    // Redirect to the app's deep link, passing the data
+    const deepLink = `com.bhageshghuge.arthgyandashboard://callback?identity_document=${identity_document}&status=${status}`;
+    res.redirect(deepLink); // Redirect to the deep link in your app
+  } else {
+    res.status(400).send("Missing required fields");
   }
 });
 

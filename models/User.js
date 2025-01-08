@@ -48,6 +48,8 @@ const userSchema = new mongoose.Schema({
   },
   pin: { type: String },
   investorId: { type: String },
+  kycId: { type: String },
+  identityDocumentId: { type: String },
 });
 
 // Create indexes
