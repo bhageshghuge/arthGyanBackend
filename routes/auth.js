@@ -850,7 +850,7 @@ router.all("/callback", (req, res) => {
     // Example: Update database, notify users, etc.
 
     // Redirect to app's deep link for eSign
-    const deepLink = `com.yourappname.dashboard://callback?esign=${esign}&status=${status}`;
+    const deepLink = `com.bhageshghuge.arthgyandashboard://callback?esign=${esign}&status=${status}`;
     return res.redirect(deepLink);
   }
 
@@ -863,7 +863,7 @@ router.all("/callback", (req, res) => {
     // Example: Update database, notify users, etc.
 
     // Redirect to app's deep link for Identity Document
-    const deepLink = `com.yourappname.dashboard://callback?identity_document=${identity_document}&status=${status}`;
+    const deepLink = `com.bhageshghuge.arthgyandashboard://callback?identity_document=${identity_document}&status=${status}`;
     return res.redirect(deepLink);
   }
 
