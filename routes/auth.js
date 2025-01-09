@@ -715,6 +715,38 @@ router.post("/kyc-request", async (req, res) => {
     });
   }
 });
+// GET KYC request by ID
+router.get("/kyc/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const accessToken = await getAccessToken();
+
+    const headers = {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    };
+    // Make the API request using axios
+    const response = await axios.get(
+      `https://s.finprim.com/v2/kyc_requests/${id}`,
+      { headers }
+    );
+
+    // Send the KYC request data back as response
+    res.status(200).json(response.data);
+  } catch (error) {
+    // Handle errors (e.g., API errors, network issues)
+    if (error.response) {
+      // If the error is from the external API
+      res.status(error.response.status).json({
+        message: error.response.data.message || "Error fetching KYC details",
+      });
+    } else {
+      // If there’s a different error (e.g., network)
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  }
+});
 
 router.post("/generate-identity-document", async (req, res) => {
   const { email, postbackUrl } = req.body;
