@@ -719,32 +719,55 @@ router.post("/kyc-request", async (req, res) => {
 router.get("/kyc/:id", async (req, res) => {
   const { id } = req.params;
 
+  if (!id) {
+    return res.status(400).json({ message: "Invalid KYC ID" });
+  }
+
   try {
     const accessToken = await getAccessToken();
 
-    const headers = {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    };
-    // Make the API request using axios
     const response = await axios.get(
       `https://s.finprim.com/v2/kyc_requests/${id}`,
-      { headers }
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
     );
 
-    // Send the KYC request data back as response
-    res.status(200).json(response.data);
+    const kycData = response.data;
+    const { email, verification } = kycData;
+
+    if (!email || !verification || !verification.status) {
+      return res.status(200).json(kycData);
+    }
+
+    const kycStatus = verification.status;
+
+    const updateFields =
+      kycStatus === "rejected" || kycStatus === "expired"
+        ? {
+            kycStatus,
+            kycId: null,
+            identityDocumentId: null,
+            esignId: null,
+          }
+        : { kycStatus };
+
+    await User.findOneAndUpdate({ email }, updateFields, { new: true });
+
+    res.status(200).json(kycData);
   } catch (error) {
-    // Handle errors (e.g., API errors, network issues)
+    console.error("Error fetching KYC details:", error);
+
     if (error.response) {
-      // If the error is from the external API
-      res.status(error.response.status).json({
+      return res.status(error.response.status).json({
         message: error.response.data.message || "Error fetching KYC details",
       });
-    } else {
-      // If there’s a different error (e.g., network)
-      res.status(500).json({ message: "Internal Server Error" });
     }
+
+    res.status(500).json({ message: "Internal Server Error" });
   }
 });
 

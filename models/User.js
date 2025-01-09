@@ -51,6 +51,7 @@ const userSchema = new mongoose.Schema({
   kycId: { type: String },
   identityDocumentId: { type: String },
   esignId: { type: String },
+  kycStatus: { type: String, default: "not_started" },
 });
 
 // Create indexes
