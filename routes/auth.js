@@ -869,38 +869,72 @@ router.post("/create-esign", async (req, res) => {
   }
 });
 
+// router.all("/callback", (req, res) => {
+//   // Extract query parameters
+//   const { esign, identity_document, status } = req.query;
+
+//   if (esign) {
+//     console.log(`eSign Callback Received`);
+//     console.log(`eSign ID: ${esign}`);
+//     console.log(`Status: ${status}`);
+
+//     // Perform necessary actions for eSign response
+//     // Example: Update database, notify users, etc.
+
+//     // Redirect to app's deep link for eSign
+//     const deepLink = `com.bhageshghuge.arthgyandashboard://callback?esign=${esign}&status=${status}`;
+//     return res.redirect(deepLink);
+//   }
+
+//   if (identity_document) {
+//     console.log(`Identity Document Callback Received`);
+//     console.log(`Identity Document ID: ${identity_document}`);
+//     console.log(`Status: ${status}`);
+
+//     // Perform necessary actions for Identity Document response
+//     // Example: Update database, notify users, etc.
+
+//     // Redirect to app's deep link for Identity Document
+//     const deepLink = `com.bhageshghuge.arthgyandashboard://callback?identity_document=${identity_document}&status=${status}`;
+//     return res.redirect(deepLink);
+//   }
+
+//   // If neither esign nor identity_document is present
+//   res.status(400).send("Missing required fields");
+// });
 router.all("/callback", (req, res) => {
-  // Extract query parameters
-  const { esign, identity_document, status } = req.query;
+  // Use router.all to handle both GET and POST
+  const { identity_document, status } = req.query; // Use req.query for GET params
 
-  if (esign) {
-    console.log(`eSign Callback Received`);
-    console.log(`eSign ID: ${esign}`);
+  if (identity_document && status) {
+    console.log(`Identity Document: ${identity_document}`);
     console.log(`Status: ${status}`);
 
-    // Perform necessary actions for eSign response
-    // Example: Update database, notify users, etc.
+    // Perform any necessary actions with the data (e.g., store, process)
 
-    // Redirect to app's deep link for eSign
-    const deepLink = `com.bhageshghuge.arthgyandashboard://callback?esign=${esign}&status=${status}`;
-    return res.redirect(deepLink);
-  }
-
-  if (identity_document) {
-    console.log(`Identity Document Callback Received`);
-    console.log(`Identity Document ID: ${identity_document}`);
-    console.log(`Status: ${status}`);
-
-    // Perform necessary actions for Identity Document response
-    // Example: Update database, notify users, etc.
-
-    // Redirect to app's deep link for Identity Document
+    // Redirect to the app's deep link, passing the data
     const deepLink = `com.bhageshghuge.arthgyandashboard://callback?identity_document=${identity_document}&status=${status}`;
-    return res.redirect(deepLink);
+    res.redirect(deepLink); // Redirect to the deep link in your app
+  } else {
+    res.status(400).send("Missing required fields");
   }
+});
+router.all("/callback-esign", (req, res) => {
+  // Use router.all to handle both GET and POST
+  const { esign, status } = req.query; // Use req.query for GET params
 
-  // If neither esign nor identity_document is present
-  res.status(400).send("Missing required fields");
+  if (esign && status) {
+    console.log(`esign: ${esign}`);
+    console.log(`Status: ${status}`);
+
+    // Perform any necessary actions with the data (e.g., store, process)
+
+    // Redirect to the app's deep link, passing the data
+    const deepLink = `com.bhageshghuge.arthgyandashboard://callback-esign?esign=${esign}&status=${status}`;
+    res.redirect(deepLink); // Redirect to the deep link in your app
+  } else {
+    res.status(400).send("Missing required fields");
+  }
 });
 
 module.exports = router;
