@@ -776,22 +776,99 @@ router.post("/generate-identity-document", async (req, res) => {
   }
 });
 
-router.all("/callback", (req, res) => {
-  // Use router.all to handle both GET and POST
-  const { identity_document, status } = req.query; // Use req.query for GET params
+// Route to generate eSign
+router.post("/create-esign", async (req, res) => {
+  const { email, postbackUrl } = req.body;
 
-  if (identity_document && status) {
-    console.log(`Identity Document: ${identity_document}`);
+  try {
+    // Find the user by email
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Retrieve the KYC request ID
+    const kycRequestId = user.kycId; // Assuming the kycRequestId is stored in the user document
+
+    if (!kycRequestId) {
+      return res.status(400).json({ error: "KYC request ID not found" });
+    }
+
+    // Prepare the data for the external API
+    const jsonRequest = {
+      kyc_request: kycRequestId,
+      postback_url: postbackUrl,
+    };
+
+    console.log("Requesting eSign with data:", jsonRequest);
+
+    // Fetch the access token for authentication
+    const accessToken = await getAccessToken();
+
+    // Send the request to create an eSign
+    const response = await axios.post(
+      "https://s.finprim.com/v2/esigns",
+      JSON.stringify(jsonRequest),
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    // Handle the API response
+    const esign = response.data;
+
+    console.log("eSign created:", esign);
+
+    // Optionally save the eSign ID to the user record
+    user.esignId = esign.id; // Save the eSign ID if needed
+    await user.save();
+
+    res.status(200).json({
+      message: "eSign created successfully",
+      esign,
+    });
+  } catch (error) {
+    console.error("Error creating eSign:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.all("/callback", (req, res) => {
+  // Extract query parameters
+  const { esign, identity_document, status } = req.query;
+
+  if (esign) {
+    console.log(`eSign Callback Received`);
+    console.log(`eSign ID: ${esign}`);
     console.log(`Status: ${status}`);
 
-    // Perform any necessary actions with the data (e.g., store, process)
+    // Perform necessary actions for eSign response
+    // Example: Update database, notify users, etc.
 
-    // Redirect to the app's deep link, passing the data
-    const deepLink = `com.bhageshghuge.arthgyandashboard://callback?identity_document=${identity_document}&status=${status}`;
-    res.redirect(deepLink); // Redirect to the deep link in your app
-  } else {
-    res.status(400).send("Missing required fields");
+    // Redirect to app's deep link for eSign
+    const deepLink = `com.yourappname.dashboard://callback?esign=${esign}&status=${status}`;
+    return res.redirect(deepLink);
   }
+
+  if (identity_document) {
+    console.log(`Identity Document Callback Received`);
+    console.log(`Identity Document ID: ${identity_document}`);
+    console.log(`Status: ${status}`);
+
+    // Perform necessary actions for Identity Document response
+    // Example: Update database, notify users, etc.
+
+    // Redirect to app's deep link for Identity Document
+    const deepLink = `com.yourappname.dashboard://callback?identity_document=${identity_document}&status=${status}`;
+    return res.redirect(deepLink);
+  }
+
+  // If neither esign nor identity_document is present
+  res.status(400).send("Missing required fields");
 });
 
 module.exports = router;
