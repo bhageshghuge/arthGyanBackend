@@ -641,69 +641,20 @@ router.post("/kyc-request", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Check if the user already has an existing KYC request
-    if (user.kycId) {
-      console.log(`Checking existing KYC request with ID ${user.kycId}`);
+    // No existing KYC ID, so create a new request
+    const response = await axios.post(
+      "https://s.finprim.com/v2/kyc_requests",
+      JSON.stringify(jsonRequest),
+      { headers }
+    );
+    console.log("New KYC request created:", response.data);
+    user.kycId = response.data.id;
+    await user.save(); // Save the new KYC request ID
 
-      const kycResponse = await axios.get(
-        `https://s.finprim.com/v2/kyc_requests/${user.kycId}`,
-        { headers }
-      );
-
-      const kycExpiresAt = new Date(kycResponse.data.expires_at);
-      const currentTime = new Date();
-
-      if (kycExpiresAt > currentTime) {
-        // KYC request is still valid, so update it
-        console.log(
-          `KYC request with ID ${user.kycId} is still valid. Updating it.`
-        );
-        const response = await axios.post(
-          `https://s.finprim.com/v2/kyc_requests/${user.kycId}`,
-          JSON.stringify(jsonRequest),
-          { headers }
-        );
-        console.log("Updated KYC request:", response.data);
-        res.status(200).json({
-          message: "KYC request updated successfully",
-          data: response.data,
-        });
-        return;
-      } else {
-        // KYC request is expired, so create a new one
-        console.log("KYC request has expired. Creating a new KYC request.");
-        const response = await axios.post(
-          "https://s.finprim.com/v2/kyc_requests",
-          JSON.stringify(jsonRequest),
-          { headers }
-        );
-        console.log("New KYC request created:", response.data);
-        user.kycId = response.data.id;
-        await user.save(); // Save the new KYC request ID
-
-        res.status(200).json({
-          message: "KYC request created successfully",
-          data: response.data,
-        });
-        return;
-      }
-    } else {
-      // No existing KYC ID, so create a new request
-      console.log("No existing KYC request. Creating a new one.");
-      const response = await axios.post(
-        "https://s.finprim.com/v2/kyc_requests",
-        JSON.stringify(jsonRequest),
-        { headers }
-      );
-      console.log("New KYC request created:", response.data);
-      user.kycId = response.data.id;
-      await user.save(); // Save the new KYC request ID
-
-      res.status(200).json({
-        message: "KYC request created successfully",
-        data: response.data,
-      });
-    }
+    res.status(200).json({
+      message: "KYC request created successfully",
+      data: response.data,
+    });
   } catch (error) {
     console.error(
       "Error handling KYC requestsss:",
@@ -728,6 +679,62 @@ router.get("/kyc/:id", async (req, res) => {
 
     const response = await axios.get(
       `https://s.finprim.com/v2/kyc_requests/${id}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const kycData = response.data;
+    const { email, verification } = kycData;
+
+    if (!email || !verification || !verification.status) {
+      return res.status(200).json(kycData);
+    }
+
+    const kycStatus = verification.status;
+
+    const updateFields =
+      kycStatus === "rejected" || kycStatus === "expired"
+        ? {
+            kycStatus,
+            kycId: null,
+            identityDocumentId: null,
+            esignId: null,
+          }
+        : { kycStatus };
+
+    await User.findOneAndUpdate({ email }, updateFields, { new: true });
+
+    res.status(200).json(kycData);
+  } catch (error) {
+    console.error("Error fetching KYC details:", error);
+
+    if (error.response) {
+      return res.status(error.response.status).json({
+        message: error.response.data.message || "Error fetching KYC details",
+      });
+    }
+
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+router.post("/kyc/:id", async (req, res) => {
+  const { id } = req.params;
+  const { jsonRequest } = req.body; // Removed id from the request body
+
+  if (!id) {
+    return res.status(400).json({ message: "Invalid KYC ID" });
+  }
+
+  try {
+    const accessToken = await getAccessToken();
+
+    const response = await axios.post(
+      `https://s.finprim.com/v2/kyc_requests/${id}`,
+      JSON.stringify(jsonRequest),
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
