@@ -426,12 +426,6 @@ router.post("/user/updateUser", async (req, res) => {
       pan: user.pan, // Adjust based on the data
       country_of_birth: user.country_of_birth, // Adjust based on the data
       place_of_birth: user.place_of_birth, // Adjust based on the data
-      use_default_tax_residences: user.use_default_tax_residences,
-      first_tax_residency: {
-        country: user.first_tax_residency.country, // Adjust based on the data
-        taxid_type: user.first_tax_residency.taxid_type,
-        taxid_number: user.first_tax_residency.taxid_number, // Adjust based on the data
-      },
       source_of_wealth: user.source_of_wealth, // Adjust based on the data
       income_slab: user.income_slab, // Adjust based on the data
       pep_details: user.pep_details, // Adjust based on the data
